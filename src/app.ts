@@ -4,6 +4,16 @@ import express from "express";
 import { prisma } from "../prisma/prisma-instance";
 import { errorHandleMiddleware } from "./error-handler";
 import "express-async-errors";
+import HttpStatusCode from "./status-codes";
+import { validateId } from "./error-handler";
+
+const {
+  OK,
+  BAD_REQUEST,
+  INTERNAL_SERVER_ERROR,
+  CREATED,
+  NO_CONTENT,
+} = HttpStatusCode;
 
 //get all dog data
 
@@ -11,28 +21,22 @@ const app = express();
 app.use(express.json());
 
 app.get("/", (_req, res) => {
-  res.status(200).json({ message: "Hello World!" });
+  res.status(OK).json({ message: "Hello World!" });
 });
 
 app.get("/dogs", async (_req, res) => {
   try {
     const dogs = await prisma.dog.findMany();
-    res.status(200).json(dogs);
+    res.status(OK).json(dogs);
   } catch (error) {
     res
-      .status(500)
+      .status(INTERNAL_SERVER_ERROR)
       .json({ error: "Failed to retrieve dogs" });
   }
 });
 
-app.get("/dogs/:id", async (req, res) => {
+app.get("/dogs/:id", validateId, async (req, res) => {
   const id = Number(req.params.id);
-
-  if (isNaN(id)) {
-    return res
-      .status(400)
-      .json({ message: "id should be a number" });
-  }
 
   try {
     const dog = await prisma.dog.findUnique({
@@ -41,14 +45,14 @@ app.get("/dogs/:id", async (req, res) => {
 
     if (!dog) {
       return res
-        .status(204)
+        .status(NO_CONTENT)
         .json({ message: "Dog not found" });
     }
 
-    return res.status(200).json(dog);
+    return res.status(OK).json(dog);
   } catch (error) {
     res
-      .status(500)
+      .status(INTERNAL_SERVER_ERROR)
       .json({ error: "Failed to retrieve dog" });
   }
 });
@@ -88,7 +92,7 @@ app.post("/dogs", async (req, res) => {
   }
 
   if (errors.length) {
-    return res.status(400).send({ errors });
+    return res.status(BAD_REQUEST).send({ errors });
   }
 
   try {
@@ -100,16 +104,16 @@ app.post("/dogs", async (req, res) => {
         age,
       },
     });
-    return res.status(201).json(newDog);
+    return res.status(CREATED).json(newDog);
   } catch (error) {
     return res
-      .status(500)
+      .status(INTERNAL_SERVER_ERROR)
       .json({ error: "Failed to create dog" });
   }
 });
 
 // PATCH /dogs/:id - updates a dog by id
-app.patch("/dogs/:id", async (req, res) => {
+app.patch("/dogs/:id", validateId, async (req, res) => {
   const { id } = req.params;
   const errors: string[] = [];
   const allowedKeys = [
@@ -144,7 +148,7 @@ app.patch("/dogs/:id", async (req, res) => {
   }
 
   if (errors.length) {
-    return res.status(400).json({ errors });
+    return res.status(BAD_REQUEST).json({ errors });
   }
 
   try {
@@ -152,42 +156,33 @@ app.patch("/dogs/:id", async (req, res) => {
       where: { id: Number(id) },
       data: { name, description, breed, age },
     });
-    return res.status(201).json(updatedDog);
+    return res.status(CREATED).json(updatedDog);
   } catch (error) {
-    if ((error as { code?: string }).code === "P2025") {
-      return res
-        .status(404)
-        .json({ error: "Dog not found" });
-    }
     return res
-      .status(500)
+      .status(INTERNAL_SERVER_ERROR)
       .json({ error: "Failed to update dog" });
   }
 });
 
 // DELETE /dogs/:id - Delete a dog via id
-app.delete("/dogs/:id", async (req, res) => {
-  const { id } = req.params;
+app.delete("/dogs/:id", validateId, async (req, res) => {
+  const id = Number(req.params.id);
 
   if (isNaN(Number(id))) {
     return res
-      .status(400)
+      .status(BAD_REQUEST)
       .json({ message: "id should be a number" });
   }
 
   try {
-    const dogToDelete = await prisma.dog.findUnique({
-      where: { id: Number(id) },
+    const deletedDog = await prisma.dog.delete({
+      where: { id },
     });
-
-    if (!dogToDelete) {
-      return res.status(204).send();
-    }
-
-    await prisma.dog.delete({ where: { id: Number(id) } });
-    res.status(200).json(dogToDelete);
+    res.status(OK).json(deletedDog);
   } catch (error) {
-    res.status(400).json({ error: "Failed to delete dog" });
+    res
+      .status(NO_CONTENT)
+      .json({ error: "Failed to delete dog" });
   }
 });
 
